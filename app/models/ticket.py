@@ -4,7 +4,7 @@ from uuid import UUID
 from sqlalchemy import Column, DateTime
 from sqlmodel import SQLModel, Field
 
-from app.types import RequestType, Priorities
+from app.app_types import RequestType, Priorities
 
 
 class TicketBase(SQLModel):
@@ -21,7 +21,7 @@ class Ticket(TicketBase, table=True):
             nullable=False,
         )
     )
-    id: UUID = Field(index=True, primary_key=True)
+    id: str = Field(index=True, primary_key=True)
     priority: Priorities = Field(default=Priorities.NONE)
     personnel: str | None = Field(default=None)
 

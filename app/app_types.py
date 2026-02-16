@@ -1,6 +1,5 @@
 from enum import Enum
 
-
 class Priorities(int, Enum):
     NONE = 0
     LOW = 1

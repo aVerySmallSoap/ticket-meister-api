@@ -51,6 +51,8 @@ app.add_middleware(
 
 @app.post("/tickets", response_model=Ticket, status_code=201)
 def create_ticket(ticket: Ticket, session: session_dependency):
+    # Year - Month - Increment
+
     ticket.id = uuid.uuid4()
     ticket.date = datetime.datetime.now(ZoneInfo("Asia/Manila"))
     db_ticket = Ticket.model_validate(ticket)
