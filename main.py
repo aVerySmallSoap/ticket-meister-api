@@ -1,4 +1,5 @@
 import datetime
+import time
 import uuid
 from contextlib import asynccontextmanager
 from typing import Annotated
@@ -11,6 +12,7 @@ from sqlmodel import SQLModel, Session, select, create_engine
 
 from app.models.personnel import Personnel
 from app.models.ticket import Ticket, PersonnelUpdate
+from app.utils import check_and_retrieve_increment, create_unique_id, check_and_store_increment
 
 #Database setup
 sqlite_test_db_file = "test_database.db"
@@ -28,9 +30,15 @@ def get_session():
 
 session_dependency = Annotated[Session, Depends(get_session)]
 
+# Setup incremental id tracker
+id_tracker: int
+id_lock: bool = False
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global id_tracker
     create_db_and_tables()
+    id_tracker = check_and_retrieve_increment(engine)
     yield
 
 app = FastAPI(lifespan=lifespan)
@@ -52,13 +60,24 @@ app.add_middleware(
 @app.post("/tickets", response_model=Ticket, status_code=201)
 def create_ticket(ticket: Ticket, session: session_dependency):
     # Year - Month - Increment
+    global id_lock, id_tracker
+    while id_lock:
+        # Do not use the id tracker until the lock is released. This is to prevent race conditions.
+        time.sleep(5)
+    id_lock = True
+    gen_id = create_unique_id(id_tracker)
+    id_tracker += 1
 
-    ticket.id = uuid.uuid4()
+    # Create and store ticket into database
+    ticket.id = gen_id
     ticket.date = datetime.datetime.now(ZoneInfo("Asia/Manila"))
     db_ticket = Ticket.model_validate(ticket)
     session.add(db_ticket)
     session.commit()
     session.refresh(db_ticket)
+
+    id_lock = False
+    check_and_store_increment(id_tracker, engine) # This will be heavy on I/O usage, need better code for this check
     return db_ticket
 
 @app.get("/tickets/", response_model=list[Ticket])

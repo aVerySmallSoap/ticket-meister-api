@@ -41,5 +41,21 @@ def on_create(client, session: session_dependency):
     assert ticket_to_validate is not None
     cleanup(client, ticket_to_validate.id)
 
+def create_en_masse(client, session: session_dependency):
+    # We create multiple tickets and check if they are all created successfully and that they all exist in the database.
+
+    # fail this test if any of the ticket creations fail.
+    created_ticket_ids = []
+    for i in range(5):
+        response = client.post("/tickets", json=mock_ticket)
+        data = response.json()
+        assert response.status_code == 201
+        created_ticket_ids.append(data["id"])
+
+    for ticket_id in created_ticket_ids:
+        ticket_to_validate = session.exec(select(Ticket).where(Ticket.id == ticket_id)).first()
+        assert ticket_to_validate is not None
+        cleanup(client, ticket_to_validate.id)
+
 def cleanup(client, ticket_id):
     client.delete(f"/tickets/{ticket_id}")
