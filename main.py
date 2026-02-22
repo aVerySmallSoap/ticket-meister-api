@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, Depends, Query, HTTPException
 from sqlmodel import SQLModel, Session, select, create_engine
 
+from app.app_types import Priorities
 from app.models.personnel import Personnel
 from app.models.ticket import Ticket, PersonnelUpdate
 from app.utils import check_and_retrieve_increment, create_unique_id, check_and_store_increment
@@ -51,7 +52,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
     allow_headers=["*"]
 )
 
@@ -91,7 +92,7 @@ def read_tickets(
 
 @app.get("/tickets/{ticket_id}")
 def get_ticket(
-        ticket_id: uuid.UUID,
+        ticket_id: str,
         session: session_dependency
 ):
     ticket = session.get(Ticket, ticket_id)
@@ -101,7 +102,7 @@ def get_ticket(
 
 @app.delete("/tickets/{ticket_id}")
 def delete_ticket(
-        ticket_id: uuid.UUID,
+        ticket_id: str,
         session: session_dependency
 ):
     ticket = session.get(Ticket, ticket_id)
@@ -111,9 +112,9 @@ def delete_ticket(
     session.commit()
     return {"ok": True}
 
-@app.patch("/tickets/{ticket_id}")
+@app.put("/tickets/{ticket_id}")
 def update_ticket(
-        ticket_id: uuid.UUID,
+        ticket_id: str,
         ticket: PersonnelUpdate,
         session: session_dependency
 ):
