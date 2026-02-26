@@ -10,7 +10,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, Depends, Query, HTTPException
 from sqlmodel import SQLModel, Session, select, create_engine
 
-from app.app_types import Priorities
 from app.models.personnel import Personnel
 from app.models.ticket import Ticket, PersonnelUpdate
 from app.utils import check_and_retrieve_increment, create_unique_id, check_and_store_increment
@@ -139,13 +138,13 @@ def create_personnel(personnel: Personnel, session: session_dependency):
     session.refresh(db_personnel)
     return db_personnel
 
-@app.get("/personnel", response_model=Personnel)
+@app.get("/personnel", response_model=list[Personnel])
 def read_personnel(
         session: session_dependency,
         offset:int = 0,
         limit: Annotated[int, Query(le=100)] = 100
 ):
-    personnel = session.exec(select(Ticket).offset(offset).limit(limit)).all()
+    personnel = session.exec(select(Personnel).offset(offset).limit(limit)).all()
     return personnel
 
 @app.get("/personnel/{personnel_id}")
