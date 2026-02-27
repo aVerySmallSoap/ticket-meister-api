@@ -1,8 +1,8 @@
 from datetime import datetime
-from uuid import UUID
+from typing import List
 
 from sqlalchemy import Column, DateTime
-from sqlmodel import SQLModel, Field
+from sqlmodel import SQLModel, Field, ARRAY, String
 
 from app.app_types import RequestType, Priorities
 
@@ -23,8 +23,10 @@ class Ticket(TicketBase, table=True):
     )
     id: str = Field(index=True, primary_key=True)
     priority: Priorities = Field(default=Priorities.NONE)
-    personnel: str | None = Field(default=None)
+    # personnel: List[str] | None = Field(default=None, sa_column=Column(ARRAY(String))) # Use a list if possible in MariaDB
+    personnel: str | None
 
 class PersonnelUpdate(TicketBase):
     priority: Priorities
+    # personnel: List[str] | None =Field(sa_column=Column(ARRAY(String))) # Use a list if possible in MariaDB
     personnel: str | None

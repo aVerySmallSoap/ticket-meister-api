@@ -121,6 +121,7 @@ def update_ticket(
     if not ticket_db:
         raise HTTPException(status_code=404, detail="Ticket Not Found")
     ticket_data = ticket.model_dump(exclude_unset=True)
+
     ticket_db.sqlmodel_update(ticket_data)
     session.add(ticket_db)
     session.commit()
@@ -148,7 +149,7 @@ def read_personnel(
     return personnel
 
 @app.get("/personnel/{personnel_id}")
-def get_ticket(
+def get_personnel(
         personnel_id: uuid.UUID,
         session: session_dependency
 ):
@@ -157,8 +158,14 @@ def get_ticket(
         raise HTTPException(status_code=404, detail="Personnel Not Found")
     return ticket
 
+@app.post("/personnel/")
+def get_list_personnel(
+        session: session_dependency
+):
+    pass
+
 @app.delete("/personnel/{personnel_id}")
-def delete_ticket(
+def delete_personnel(
         personnel_id: uuid.UUID,
         session: session_dependency
 ):
@@ -170,7 +177,7 @@ def delete_ticket(
     return {"ok": True}
 
 @app.patch("/personnel/{personnel_id}")
-def update_ticket(
+def update_personnel(
         personnel_id: uuid.UUID,
         personnel: PersonnelUpdate,
         session: session_dependency
