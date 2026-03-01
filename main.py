@@ -8,11 +8,13 @@ from zoneinfo import ZoneInfo
 from fastapi.middleware.cors import CORSMiddleware
 
 from fastapi import FastAPI, Depends, Query, HTTPException
-from sqlmodel import SQLModel, Session, select, create_engine
+from sqlalchemy import String
+from sqlmodel import SQLModel, Session, select, create_engine, cast
 
 from app.models.personnel import Personnel
 from app.models.ticket import Ticket, PersonnelUpdate
 from app.utils import check_and_retrieve_increment, create_unique_id, check_and_store_increment
+from app.request_types import PersonnelList
 
 #Database setup
 sqlite_test_db_file = "test_database.db"
@@ -158,11 +160,18 @@ def get_personnel(
         raise HTTPException(status_code=404, detail="Personnel Not Found")
     return ticket
 
-@app.post("/personnel/")
-def get_list_personnel(
+@app.post("/personnel/list")
+def get_personnel_list(
+        personnel: PersonnelList,
         session: session_dependency
 ):
-    pass
+    # SQLite stores UUIDs as string so we need to cast it all to string
+    ids_as_str = [str(u) for u in personnel.ids]
+    stmt = select(Personnel).where(cast(Personnel.id, String).in_(ids_as_str))
+    rows = session.exec(stmt).all()
+    if not rows:
+        raise HTTPException(status_code=404, detail="Personnel Not Found")
+    return rows
 
 @app.delete("/personnel/{personnel_id}")
 def delete_personnel(

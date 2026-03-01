@@ -14,3 +14,4 @@ class RequestType(int, Enum):
     system_services = 3
     request_for_system_development = 4
     others = 5
+    equipment_repair_report = 6
