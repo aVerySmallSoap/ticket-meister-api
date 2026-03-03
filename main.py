@@ -14,7 +14,7 @@ from sqlmodel import SQLModel, Session, select, create_engine, cast
 from app.models.personnel import Personnel
 from app.models.ticket import Ticket, PersonnelUpdate
 from app.utils import check_and_retrieve_increment, create_unique_id, check_and_store_increment
-from app.request_types import PersonnelList
+from app.types.request_types import PersonnelList
 
 #Database setup
 sqlite_test_db_file = "test_database.db"

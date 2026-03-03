@@ -15,3 +15,10 @@ class RequestType(int, Enum):
     request_for_system_development = 4
     others = 5
     equipment_repair_report = 6
+
+class Status(int, Enum):
+    PENDING = 0
+    IN_PROGRESS = 1
+    COMPLETED = 2
+    FAILED = 3
+    NO_FIX = 4

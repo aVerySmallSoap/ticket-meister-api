@@ -1,10 +1,9 @@
 from datetime import datetime
-from typing import List
 
 from sqlalchemy import Column, DateTime
-from sqlmodel import SQLModel, Field, ARRAY, String
+from sqlmodel import SQLModel, Field
 
-from app.app_types import RequestType, Priorities
+from app.types.app_types import RequestType, Status, Priorities
 
 
 class TicketBase(SQLModel):
@@ -14,7 +13,7 @@ class TicketBase(SQLModel):
     request_type: RequestType
     details: str | None = Field(default=None)
 
-class Ticket(TicketBase, table=True):
+class Ticket(TicketBase, table=True, tablename='tickets'):
     date: datetime = Field(
         sa_column=Column(
             DateTime(timezone=True),
@@ -25,6 +24,7 @@ class Ticket(TicketBase, table=True):
     priority: Priorities = Field(default=Priorities.NONE)
     # personnel: List[str] | None = Field(default=None, sa_column=Column(ARRAY(String))) # Use a list if possible in MariaDB
     personnel: str | None
+    status: Status = Field(default=Status.PENDING)
 
 class PersonnelUpdate(TicketBase):
     priority: Priorities
