@@ -23,7 +23,7 @@ class Ticket(TicketBase, table=True, tablename='tickets'):
     id: str = Field(index=True, primary_key=True)
     priority: Priorities = Field(default=Priorities.NONE)
     # personnel: List[str] | None = Field(default=None, sa_column=Column(ARRAY(String))) # Use a list if possible in MariaDB
-    personnel: str | None
+    personnel: str = Field(default='None')
     status: Status = Field(default=Status.PENDING)
 
 class PersonnelUpdate(TicketBase):
