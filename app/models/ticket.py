@@ -30,3 +30,4 @@ class PersonnelUpdate(TicketBase):
     priority: Priorities
     # personnel: List[str] | None =Field(sa_column=Column(ARRAY(String))) # Use a list if possible in MariaDB
     personnel: str | None
+    status: Status
