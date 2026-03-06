@@ -5,7 +5,7 @@ class Priorities(int, Enum):
     LOW = 1
     MEDIUM = 2
     HIGH = 3
-    HIGHEST = 4
+    URGENT = 4
 
 class RequestType(int, Enum):
     hardware_repairs_and_configuration = 0
@@ -20,5 +20,4 @@ class Status(int, Enum):
     PENDING = 0
     IN_PROGRESS = 1
     COMPLETED = 2
-    FAILED = 3
-    NO_FIX = 4
+    CLOSED = 3
