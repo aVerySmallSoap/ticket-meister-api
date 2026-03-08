@@ -5,16 +5,18 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 from zoneinfo import ZoneInfo
 
+import bcrypt
 from fastapi.middleware.cors import CORSMiddleware
 
 from fastapi import FastAPI, Depends, Query, HTTPException
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import String
 from sqlmodel import SQLModel, Session, select, create_engine, cast
 
-from app.models.personnel import Personnel
 from app.models.ticket import Ticket, PersonnelUpdate
 from app.utils import check_and_retrieve_increment, create_unique_id, check_and_store_increment
 from app.types.request_types import PersonnelList
+from app.models.user import User
 
 #Database setup
 sqlite_test_db_file = "test_database.db"
@@ -56,6 +58,41 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
     allow_headers=["*"]
 )
+
+# Security stuff
+
+oauth_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(
+        password.encode('utf-8'),
+        bcrypt.gensalt()
+    ).decode('utf-8')
+
+def verify_password(password: str, password_hashed: str) -> bool:
+    return bcrypt.checkpw(password.encode('utf-8'), password_hashed.encode('utf-8'))
+
+@app.get("/test")
+def token_test(
+        token: Annotated[str, Depends(oauth_scheme)]
+):
+    return {"token": token}
+
+
+# Authentication endpoints
+@app.get("/test")
+def token_test(
+        token: Annotated[str, Depends(oauth_scheme)]
+):
+    return {"token": token}
+
+#
+@app.post("/auth")
+def authenticate(
+        user: User,
+        session: session_dependency
+):
+    print(user)
 
 # Ticket endpoints
 
@@ -130,16 +167,25 @@ def update_ticket(
     session.refresh(ticket_db)
     return ticket_db
 
-# Personnel endpoints
+# User endpoints
 
-@app.post("/personnel", response_model=Personnel)
-def create_personnel(personnel: Personnel, session: session_dependency):
-    personnel.id = uuid.uuid4()
-    db_personnel = Personnel.model_validate(personnel)
-    session.add(db_personnel)
-    session.commit()
-    session.refresh(db_personnel)
-    return db_personnel
+@app.post("/user")
+def create_user(user: User, session: session_dependency):
+    try:
+        # Hash the password
+        hashed_password = hash_password(user.password)
+        #change values
+        user.id = uuid.uuid4()
+        user.password = hashed_password
+
+        db_user = User.model_validate(user)
+        session.add(db_user)
+        session.commit()
+        session.refresh(db_user)
+    except Exception as error:
+        # log error
+        print(error)
+        raise HTTPException(status_code=500)
 
 @app.get("/personnel", response_model=list[Personnel])
 def read_personnel(

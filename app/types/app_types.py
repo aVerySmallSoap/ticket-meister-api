@@ -21,3 +21,7 @@ class Status(int, Enum):
     IN_PROGRESS = 1
     COMPLETED = 2
     CLOSED = 3
+
+class Roles(int, Enum):
+    Admin = 0
+    Technician = 1
