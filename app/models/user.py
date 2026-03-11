@@ -1,4 +1,6 @@
 import uuid
+
+from pydantic import BaseModel
 from sqlmodel import SQLModel, Field
 
 from app.types.app_types import Roles
@@ -12,3 +14,19 @@ class User(UserBase, table=True, tablename='users'):
     id: uuid.UUID = Field(primary_key=True)
     password: str
     role: Roles = Field(default=Roles.Technician)
+
+class UserCreate(UserBase):
+    password: str
+
+class UserPublic(UserBase):
+    id: uuid.UUID
+    role: Roles
+
+# Request Types
+
+class UserList(BaseModel):
+    ids: list[uuid.UUID]
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str

@@ -3,3 +3,4 @@ sqlmodel
 tzdata
 pytest
 python-jose
+bcrypt

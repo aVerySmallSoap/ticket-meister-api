@@ -2,6 +2,7 @@ import datetime
 import time
 import uuid
 from contextlib import asynccontextmanager
+from http import HTTPStatus
 from typing import Annotated
 from zoneinfo import ZoneInfo
 
@@ -9,14 +10,14 @@ import bcrypt
 from fastapi.middleware.cors import CORSMiddleware
 
 from fastapi import FastAPI, Depends, Query, HTTPException
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy import String
 from sqlmodel import SQLModel, Session, select, create_engine, cast
 
 from app.models.ticket import Ticket, PersonnelUpdate
+from app.types.responses import Response, ResponseModel
 from app.utils import check_and_retrieve_increment, create_unique_id, check_and_store_increment
-from app.types.request_types import PersonnelList
-from app.models.user import User
+from app.models.user import User, UserCreate, UserPublic, UserList, LoginRequest
 
 #Database setup
 sqlite_test_db_file = "test_database.db"
@@ -72,27 +73,36 @@ def hash_password(password: str) -> str:
 def verify_password(password: str, password_hashed: str) -> bool:
     return bcrypt.checkpw(password.encode('utf-8'), password_hashed.encode('utf-8'))
 
-@app.get("/test")
-def token_test(
-        token: Annotated[str, Depends(oauth_scheme)]
+def get_current_user(
+        token: Annotated[str, Depends(oauth_scheme)],
+        session: Annotated[Session, Depends(get_session)]
 ):
-    return {"token": token}
-
+    #JWT implementation
+    return HTTPException(status_code=500)
 
 # Authentication endpoints
-@app.get("/test")
-def token_test(
-        token: Annotated[str, Depends(oauth_scheme)]
-):
-    return {"token": token}
-
-#
 @app.post("/auth")
 def authenticate(
-        user: User,
+        user: Annotated[OAuth2PasswordRequestForm, Depends()],
         session: session_dependency
 ):
-    print(user)
+    #IMPORTANT! CHECK FOR SQL INJECTION
+
+    #Check for blank input
+    if len(user.username.strip()) == 0 or len(user.password) == 0 or user.username.strip() == "":
+        return Response().code(HTTPStatus.BAD_REQUEST).status("error").message("Field inputs are missing").json()
+
+    #Check if email exists
+    user_db = session.exec(
+        select(User).where(User.email == user.username)
+    ).one_or_none()
+    if not user_db:
+        return Response().code(HTTPStatus.NOT_FOUND).status("error").message("User does not exist").json()
+
+    user_dump = User.model_validate(user_db)
+    if not verify_password(user.password, user_dump.password):
+        return Response().code(HTTPStatus.FORBIDDEN).status("error").message("incorrect password").json()
+    return Response().code(HTTPStatus.OK).status("ok").message("user logged in").appended(access_token=user_dump.full_name, token_type="bearer")
 
 # Ticket endpoints
 
@@ -169,80 +179,90 @@ def update_ticket(
 
 # User endpoints
 
-@app.post("/user")
-def create_user(user: User, session: session_dependency):
+@app.post("/user", response_model=ResponseModel)
+def create_user(user: UserCreate, session: session_dependency):
     try:
-        # Hash the password
-        hashed_password = hash_password(user.password)
-        #change values
-        user.id = uuid.uuid4()
-        user.password = hashed_password
+        #TODO: Check if email is valid.
 
+        # check if email already exists
+        existing = session.exec(select(User).where(User.email == user.email)).first()
+
+        if existing:
+            return Response().code(HTTPStatus.CONFLICT).status("error").message("User already exists!").json()
+        hashed_password = hash_password(user.password)
+
+        model_dump = user.model_dump()
+        model_dump["id"] = uuid.uuid4()
+        model_dump["password"] = hashed_password
+
+        user = User.model_construct(**model_dump)
         db_user = User.model_validate(user)
+
         session.add(db_user)
         session.commit()
         session.refresh(db_user)
+        return Response().code(HTTPStatus.OK).status("ok").message("test").json()
     except Exception as error:
         # log error
         print(error)
         raise HTTPException(status_code=500)
 
-@app.get("/personnel", response_model=list[Personnel])
+@app.get("/users", response_model=list[UserPublic])
 def read_personnel(
         session: session_dependency,
         offset:int = 0,
         limit: Annotated[int, Query(le=100)] = 100
 ):
-    personnel = session.exec(select(Personnel).offset(offset).limit(limit)).all()
+    personnel = session.exec(select(User).offset(offset).limit(limit)).all()
     return personnel
 
-@app.get("/personnel/{personnel_id}")
+@app.get("/user/{user_id}")
 def get_personnel(
-        personnel_id: uuid.UUID,
+        user_id: uuid.UUID,
         session: session_dependency
 ):
-    ticket = session.get(Personnel, personnel_id)
+    ticket = session.get(User, user_id)
     if not ticket:
         raise HTTPException(status_code=404, detail="Personnel Not Found")
     return ticket
 
-@app.post("/personnel/list")
-def get_personnel_list(
-        personnel: PersonnelList,
+@app.post("/user/list")
+def get_user_list(
+        user_list: UserList,
         session: session_dependency
 ):
     # SQLite stores UUIDs as string so we need to cast it all to string
-    ids_as_str = [str(u) for u in personnel.ids]
-    stmt = select(Personnel).where(cast(Personnel.id, String).in_(ids_as_str))
+    ids_as_str = [str(u) for u in user_list.ids]
+    stmt = select(User).where(cast(User.id, String).in_(ids_as_str))
     rows = session.exec(stmt).all()
     if not rows:
         raise HTTPException(status_code=404, detail="Personnel Not Found")
     return rows
 
-@app.delete("/personnel/{personnel_id}")
-def delete_personnel(
-        personnel_id: uuid.UUID,
+@app.delete("/user/{user_id}")
+def delete_user(
+        user_id: uuid.UUID,
         session: session_dependency
 ):
-    ticket = session.get(Personnel, personnel_id)
+    ticket = session.get(User, user_id)
     if not ticket:
         raise HTTPException(status_code=404, detail="Personnel Not Found")
     session.delete(ticket)
     session.commit()
     return {"ok": True}
 
-@app.patch("/personnel/{personnel_id}")
-def update_personnel(
-        personnel_id: uuid.UUID,
+@app.patch("/user/{user_id}")
+def update_user(
+        user_id: uuid.UUID,
         personnel: PersonnelUpdate,
         session: session_dependency
 ):
-    personnel_db = session.get(Personnel, personnel_id)
-    if not personnel_db:
+    user_db = session.get(User, user_id)
+    if not user_db:
         raise HTTPException(status_code=404, detail="Ticket Not Found")
-    personel_data = personnel.model_dump(exclude_unset=True)
-    personnel_db.sqlmodel_update(personel_data)
-    session.add(personnel_db)
+    user_data = personnel.model_dump(exclude_unset=True)
+    user_db.sqlmodel_update(user_data)
+    session.add(user_db)
     session.commit()
-    session.refresh(personnel_db)
-    return personnel_db
+    session.refresh(user_db)
+    return user_db
