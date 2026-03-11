@@ -4,3 +4,4 @@ tzdata
 pytest
 python-jose
 bcrypt
+pyjwt

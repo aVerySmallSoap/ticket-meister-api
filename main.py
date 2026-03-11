@@ -1,23 +1,30 @@
 import datetime
+import os
 import time
 import uuid
 from contextlib import asynccontextmanager
+from datetime import timedelta
 from http import HTTPStatus
 from typing import Annotated
 from zoneinfo import ZoneInfo
 
-import bcrypt
+import dotenv
+import jwt
+from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 
 from fastapi import FastAPI, Depends, Query, HTTPException
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from passlib.exc import InvalidTokenError
 from sqlalchemy import String
 from sqlmodel import SQLModel, Session, select, create_engine, cast
 
 from app.models.ticket import Ticket, PersonnelUpdate
+from app.models.user import User, UserCreate, UserPublic, UserList
+from app.models.tokens import TokenData, Token
 from app.types.responses import Response, ResponseModel
-from app.utils import check_and_retrieve_increment, create_unique_id, check_and_store_increment
-from app.models.user import User, UserCreate, UserPublic, UserList, LoginRequest
+from app.utils import check_and_retrieve_increment, create_unique_id, check_and_store_increment, hash_password, \
+    authenticate_user, create_access_token
 
 #Database setup
 sqlite_test_db_file = "test_database.db"
@@ -43,11 +50,14 @@ id_lock: bool = False
 async def lifespan(app: FastAPI):
     global id_tracker
     create_db_and_tables()
+    load_dotenv()
     id_tracker = check_and_retrieve_increment(engine)
     yield
 
 app = FastAPI(lifespan=lifespan)
 
+# Change later if domain is available
+# Each request should have CORS-same-site-origin set to strict
 origins = [
     "http://localhost:5173"
 ]
@@ -64,50 +74,50 @@ app.add_middleware(
 
 oauth_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
-def hash_password(password: str) -> str:
-    return bcrypt.hashpw(
-        password.encode('utf-8'),
-        bcrypt.gensalt()
-    ).decode('utf-8')
-
-def verify_password(password: str, password_hashed: str) -> bool:
-    return bcrypt.checkpw(password.encode('utf-8'), password_hashed.encode('utf-8'))
-
-def get_current_user(
+async def get_current_user(
         token: Annotated[str, Depends(oauth_scheme)],
         session: Annotated[Session, Depends(get_session)]
 ):
     #JWT implementation
-    return HTTPException(status_code=500)
+    try:
+        payload = jwt.decode(token, os.getenv("SECRET_KEY"), algorithms=[os.getenv("ALGORITHM")])
+        username = payload.get("sub")
+        if username is None:
+            raise InvalidTokenError
+        token_data = TokenData(username=username)
+    except InvalidTokenError:
+        raise HTTPException(status_code=HTTPStatus.UNAUTHORIZED)
+    user = session.exec(select(User).where(User.email == token_data.username)).one_or_none()
+    if not user:
+        raise HTTPException(
+            status_code=HTTPStatus.NOT_FOUND,
+            detail="User does not exist!"
+        )
+    return user
 
 # Authentication endpoints
-@app.post("/auth")
+@app.post("/token")
 def authenticate(
-        user: Annotated[OAuth2PasswordRequestForm, Depends()],
+        form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
         session: session_dependency
-):
-    #IMPORTANT! CHECK FOR SQL INJECTION
-
-    #Check for blank input
-    if len(user.username.strip()) == 0 or len(user.password) == 0 or user.username.strip() == "":
-        return Response().code(HTTPStatus.BAD_REQUEST).status("error").message("Field inputs are missing").json()
-
-    #Check if email exists
-    user_db = session.exec(
-        select(User).where(User.email == user.username)
-    ).one_or_none()
-    if not user_db:
-        return Response().code(HTTPStatus.NOT_FOUND).status("error").message("User does not exist").json()
-
-    user_dump = User.model_validate(user_db)
-    if not verify_password(user.password, user_dump.password):
-        return Response().code(HTTPStatus.FORBIDDEN).status("error").message("incorrect password").json()
-    return Response().code(HTTPStatus.OK).status("ok").message("user logged in").appended(access_token=user_dump.full_name, token_type="bearer")
+) -> Token:
+    user = authenticate_user(form_data.username, form_data.password, session)
+    if not user:
+        raise HTTPException(
+            status_code=HTTPStatus.UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token_expires = timedelta(minutes=float(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30")))
+    access_token = create_access_token(
+        data={"sub": user.email}, expires_delta=access_token_expires
+    )
+    return Token(access_token=access_token, token_type="bearer")
 
 # Ticket endpoints
 
 @app.post("/tickets", response_model=Ticket, status_code=201)
-def create_ticket(ticket: Ticket, session: session_dependency):
+def create_ticket(ticket: Ticket, session: session_dependency, token: Annotated[str, Depends(get_current_user)]):
     # Year - Month - Increment
     global id_lock, id_tracker
     while id_lock:
@@ -131,9 +141,10 @@ def create_ticket(ticket: Ticket, session: session_dependency):
 
 @app.get("/tickets/", response_model=list[Ticket])
 def read_tickets(
+        token: Annotated[str, Depends(get_current_user)],
         session: session_dependency,
         offset:int = 0,
-        limit: Annotated[int, Query(le=100)] = 100
+        limit: Annotated[int, Query(le=100)] = 100,
 ):
     tickets = session.exec(select(Ticket).offset(offset).limit(limit)).all()
     return tickets
@@ -141,7 +152,8 @@ def read_tickets(
 @app.get("/tickets/{ticket_id}")
 def get_ticket(
         ticket_id: str,
-        session: session_dependency
+        session: session_dependency,
+        token: Annotated[str, Depends(get_current_user)]
 ):
     ticket = session.get(Ticket, ticket_id)
     if not ticket:
@@ -151,7 +163,8 @@ def get_ticket(
 @app.delete("/tickets/{ticket_id}")
 def delete_ticket(
         ticket_id: str,
-        session: session_dependency
+        session: session_dependency,
+        token: Annotated[str, Depends(get_current_user)]
 ):
     ticket = session.get(Ticket, ticket_id)
     if not ticket:
@@ -164,7 +177,8 @@ def delete_ticket(
 def update_ticket(
         ticket_id: str,
         ticket: PersonnelUpdate,
-        session: session_dependency
+        session: session_dependency,
+        token: Annotated[str, Depends(get_current_user)]
 ):
     ticket_db = session.get(Ticket, ticket_id)
     if not ticket_db:
@@ -209,6 +223,7 @@ def create_user(user: UserCreate, session: session_dependency):
 
 @app.get("/users", response_model=list[UserPublic])
 def read_personnel(
+        token: Annotated[str, Depends(get_current_user)],
         session: session_dependency,
         offset:int = 0,
         limit: Annotated[int, Query(le=100)] = 100
@@ -219,7 +234,8 @@ def read_personnel(
 @app.get("/user/{user_id}")
 def get_personnel(
         user_id: uuid.UUID,
-        session: session_dependency
+        session: session_dependency,
+        token: Annotated[str, Depends(get_current_user)]
 ):
     ticket = session.get(User, user_id)
     if not ticket:
@@ -229,7 +245,8 @@ def get_personnel(
 @app.post("/user/list")
 def get_user_list(
         user_list: UserList,
-        session: session_dependency
+        session: session_dependency,
+        token: Annotated[str, Depends(get_current_user)]
 ):
     # SQLite stores UUIDs as string so we need to cast it all to string
     ids_as_str = [str(u) for u in user_list.ids]
@@ -242,7 +259,8 @@ def get_user_list(
 @app.delete("/user/{user_id}")
 def delete_user(
         user_id: uuid.UUID,
-        session: session_dependency
+        session: session_dependency,
+        token: Annotated[str, Depends(get_current_user)]
 ):
     ticket = session.get(User, user_id)
     if not ticket:
@@ -255,7 +273,8 @@ def delete_user(
 def update_user(
         user_id: uuid.UUID,
         personnel: PersonnelUpdate,
-        session: session_dependency
+        session: session_dependency,
+        token: Annotated[str, Depends(get_current_user)]
 ):
     user_db = session.get(User, user_id)
     if not user_db:

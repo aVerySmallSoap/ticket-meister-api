@@ -1,11 +1,59 @@
+import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
+import bcrypt
+import jwt
 from sqlalchemy import Engine
 from sqlmodel import Session, select
 
 from app.models.incrementals import Incremental
+from app.models.user import User
+
+# Auth related functions
+
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(
+        password.encode('utf-8'),
+        bcrypt.gensalt()
+    ).decode('utf-8')
+
+def verify_password(password: str, password_hashed: str) -> bool:
+    return bcrypt.checkpw(password.encode('utf-8'), password_hashed.encode('utf-8'))
+
+
+def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.now(timezone.utc) + expires_delta
+    else:
+        expire = datetime.now(timezone.utc) + timedelta(minutes=15)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, os.getenv("SECRET_KEY"), os.getenv("ALGORITHM"))
+    return encoded_jwt
+
+# Database related utils
+
+#!IMPORTANT! This function also returns none if a basic validation fails
+#TODO: Create another function that returns an exception on validation fail.
+#TODO: Check for SQL INJECTION or XSS attempts
+def authenticate_user(username: str, password: str, session: Session):
+    """Checks if the user exists on the database."""
+    if len(username.strip()) == 0 or len(password) == 0 or username.strip() == "":
+        return None
+
+    #Check if email exists
+    user_db = session.exec(
+        select(User).where(User.email == username)
+    ).one_or_none()
+    if not user_db:
+        return None
+
+    user = User.model_validate(user_db)
+    if not verify_password(password, user.password):
+        return None
+    return user
 
 def check_and_store_increment(id_tracker: int, engine: Engine):
     """Checks if the database is currently up-to-date with the in memory incremental counter. This update will always push to the database."""

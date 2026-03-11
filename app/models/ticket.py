@@ -13,7 +13,9 @@ class TicketBase(SQLModel):
     request_type: RequestType
     details: str | None = Field(default=None)
 
-class Ticket(TicketBase, table=True, tablename='tickets'):
+class Ticket(TicketBase, table=True):
+    __tablename__ = 'tickets'
+
     date: datetime = Field(
         sa_column=Column(
             DateTime(timezone=True),
