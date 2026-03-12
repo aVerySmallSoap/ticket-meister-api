@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from fastapi import FastAPI, Depends, Query, HTTPException
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.responses import Response
 from passlib.exc import InvalidTokenError
 from sqlalchemy import String
 from sqlmodel import SQLModel, Session, select, create_engine, cast
@@ -22,7 +23,7 @@ from sqlmodel import SQLModel, Session, select, create_engine, cast
 from app.models.ticket import Ticket, PersonnelUpdate
 from app.models.user import User, UserCreate, UserPublic, UserList
 from app.models.tokens import TokenData, Token
-from app.types.responses import Response, ResponseModel
+from app.types.responses import Response as CustomResponse, ResponseModel
 from app.utils import check_and_retrieve_increment, create_unique_id, check_and_store_increment, hash_password, \
     authenticate_user, create_access_token
 
@@ -98,6 +99,7 @@ async def get_current_user(
 # Authentication endpoints
 @app.post("/token")
 def authenticate(
+        response: Response,
         form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
         session: session_dependency
 ) -> Token:
@@ -112,6 +114,15 @@ def authenticate(
     access_token = create_access_token(
         data={"sub": user.email}, expires_delta=access_token_expires
     )
+
+    response.set_cookie(
+        httponly=True,
+        secure=False, #prod should be True
+        samesite="lax",
+        max_age=(int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES")) * 60),
+        path="/"
+    )
+
     return Token(access_token=access_token, token_type="bearer")
 
 # Ticket endpoints
@@ -202,7 +213,7 @@ def create_user(user: UserCreate, session: session_dependency):
         existing = session.exec(select(User).where(User.email == user.email)).first()
 
         if existing:
-            return Response().code(HTTPStatus.CONFLICT).status("error").message("User already exists!").json()
+            return CustomResponse().code(HTTPStatus.CONFLICT).status("error").message("User already exists!").json()
         hashed_password = hash_password(user.password)
 
         model_dump = user.model_dump()
@@ -215,7 +226,7 @@ def create_user(user: UserCreate, session: session_dependency):
         session.add(db_user)
         session.commit()
         session.refresh(db_user)
-        return Response().code(HTTPStatus.OK).status("ok").message("test").json()
+        return CustomResponse().code(HTTPStatus.OK).status("ok").message("test").json()
     except Exception as error:
         # log error
         print(error)

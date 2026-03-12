@@ -44,13 +44,11 @@ def authenticate_user(username: str, password: str, session: Session):
         return None
 
     #Check if email exists
-    user_db = session.exec(
+    user = session.exec(
         select(User).where(User.email == username)
     ).one_or_none()
-    if not user_db:
+    if not user:
         return None
-
-    user = User.model_validate(user_db)
     if not verify_password(password, user.password):
         return None
     return user
