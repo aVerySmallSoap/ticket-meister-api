@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Column, DateTime
 from sqlmodel import SQLModel, Field
@@ -20,7 +20,8 @@ class Ticket(TicketBase, table=True):
         sa_column=Column(
             DateTime(timezone=True),
             nullable=False,
-        )
+        ),
+        default_factory=lambda: datetime.now(timezone.utc),
     )
     id: str = Field(index=True, primary_key=True)
     priority: Priorities = Field(default=Priorities.NONE)

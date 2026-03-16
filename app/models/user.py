@@ -12,7 +12,7 @@ class UserBase(SQLModel):
 class User(UserBase, table=True):
     __tablename__ = 'users'
 
-    id: uuid.UUID = Field(primary_key=True)
+    id: uuid.UUID = Field(primary_key=True, default_factory=lambda: str(uuid.uuid4()))
     password: str
     role: Roles = Field(default=Roles.Technician)
 

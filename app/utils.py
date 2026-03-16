@@ -1,6 +1,9 @@
+import hashlib
 import os
+import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 from zoneinfo import ZoneInfo
 
 import bcrypt
@@ -10,6 +13,8 @@ from sqlmodel import Session, select
 
 from app.models.incrementals import Incremental
 from app.models.user import User
+from app.types.app_types import RequestType
+
 
 # Auth related functions
 
@@ -22,23 +27,32 @@ def hash_password(password: str) -> str:
 def verify_password(password: str, password_hashed: str) -> bool:
     return bcrypt.checkpw(password.encode('utf-8'), password_hashed.encode('utf-8'))
 
-
-def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
-    else:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=15)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, os.getenv("SECRET_KEY"), os.getenv("ALGORITHM"))
+def create_access_token(user: User) -> str:
+    # We can use a User object here since we already verify it through authenticate_user()
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": str(user.id),
+        "email": user.email,
+        "role": user.role,
+        "type": "access",
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(minutes=float(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES")))).timestamp()), # Might bite perf later
+    }
+    encoded_jwt = jwt.encode(payload, os.getenv("SECRET_KEY"), os.getenv("ALGORITHM"))
     return encoded_jwt
+
+def create_refresh_token() -> str:
+    return secrets.token_urlsafe(64)
+
+def hash_refresh_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 # Database related utils
 
 #!IMPORTANT! This function also returns none if a basic validation fails
 #TODO: Create another function that returns an exception on validation fail.
 #TODO: Check for SQL INJECTION or XSS attempts
-def authenticate_user(username: str, password: str, session: Session):
+def authenticate_user(username: str, password: str, session: Session) -> Optional[User]:
     """Checks if the user exists on the database."""
     if len(username.strip()) == 0 or len(password) == 0 or username.strip() == "":
         return None
@@ -91,3 +105,44 @@ def create_unique_id(id_tracker: int)-> str:
     timestamp = datetime.now(ZoneInfo("Asia/Manila"))
     month, year = timestamp.month, timestamp.year
     return f"{str(year)}-{str(month)}-{str(id_tracker)}"
+
+# PDF related functions
+
+def map_ticket_to_pdf(ticket):
+    req = ticket.request_type
+
+    return {
+        "SRFNO": ticket.id,
+        "FULLNAME": ticket.name,
+        "CONTACTNO": "",
+        "DATE": ticket.date.strftime("%Y-%m-%d"),
+        "EMAIL": ticket.email,
+
+        "HARDWARE": "Yes" if req == RequestType.hardware_repairs_and_configuration else "Off",
+
+        "NETWORK": "Yes" if req == RequestType.network_or_internet_services else "Off",
+
+        "DATA": "Yes" if req == RequestType.data_services else "Off",
+
+        "SYSTEM": "Yes" if req == RequestType.system_services else "Off",
+
+        "DEVELOPMENT": "Yes" if req == RequestType.request_for_system_development else "Off",
+
+        "OTHERS": "Yes" if req == RequestType.others else "Off",
+
+        "OTHERS_DETAILS": ticket.details if req == RequestType.others else "",
+
+        "DETAILS": ticket.details,
+
+        "PERSONNEL": str(ticket.personnel),
+
+        "C_DATE": ticket.date.strftime("%Y-%m-%d"),
+
+        "ACTIONTAKEN": "",
+
+        "PERSONNELSIG": "",
+
+        "DEPARTMENT": ticket.office,
+
+        "REQUESTOR": ticket.name,
+    }

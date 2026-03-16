@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from pydantic import BaseModel
 from sqlalchemy import Column, DateTime
@@ -11,27 +11,26 @@ class TokenBase(SQLModel):
         sa_column=Column(
             DateTime(timezone=True),
             nullable=False,
-        )
-    )
-    updated_at: datetime = Field(
-        sa_column=Column(
-            DateTime(timezone=True),
-            nullable=False,
-        )
+        ),
+        default_factory=lambda: datetime.now(timezone.utc),
     )
 
 class RefreshToken(TokenBase, table=True):
     __tablename__ = 'refresh_tokens'
 
-    id: uuid.UUID = Field(primary_key=True)
+    id: str = Field(primary_key=True, default_factory=lambda: str(uuid.uuid4()))
     token_hash: str
     user_id: str = Field(foreign_key='users.id')
-    expires_at: datetime
-    revoked: bool = Field(default=False)
-    revoked_at: datetime = Field(
+    expires_at: datetime = Field(
         sa_column=Column(
             DateTime(timezone=True),
-            nullable=False,
+            nullable=False
+        )
+    )
+    revoked: bool = Field(default=False)
+    revoked_at: datetime | None = Field(
+        sa_column=Column(
+            DateTime(timezone=True),
         )
     )
 
